@@ -132,36 +132,54 @@
   }
 
   function openExpenseModal(expense) {
+    const transactionType = (expense && expense.type) === "gain" ? "gain" : "expense";
     modalState = {
       type: "expense",
+      transactionType,
       expense: expense || {
         amount: "",
         date: new Date().toISOString().slice(0, 10),
-        categoryId: state.categories[0] ? state.categories[0].id : "",
+        categoryId: transactionType === "gain" ? "" : state.categories[0] ? state.categories[0].id : "",
+        type: transactionType,
         note: "",
       },
     };
     ui.renderModal(modalRoot, modalState, state);
   }
 
+  function openGainModal(expense) {
+    const transaction = expense || {
+      amount: "",
+      date: new Date().toISOString().slice(0, 10),
+      categoryId: "",
+      type: "gain",
+      note: "",
+    };
+    openExpenseModal({ ...transaction, type: "gain" });
+  }
+
   function openDuplicateExpenseModal(expense) {
     modalState = {
       type: "expense",
+      transactionType: logic.getExpenseType(expense),
       duplicateSource: expense.id,
       expense: {
         amount: expense.amount,
         date: expense.date,
         categoryId: expense.categoryId,
+        type: logic.getExpenseType(expense),
         note: expense.note,
       },
     };
     ui.renderModal(modalRoot, modalState, state);
   }
 
-  function openContributionModal(goal) {
+  function openContributionModal(goal, mode) {
     modalState = {
       type: "goal-contribution",
       goal,
+      mode: mode === "withdrawal" ? "withdrawal" : "contribution",
+      availableAmount: Number(goal && goal.contributed) || 0,
       date: new Date().toISOString().slice(0, 10),
     };
     ui.renderModal(modalRoot, modalState, state);
@@ -208,13 +226,15 @@
     const result = validation.validateBudget(values.totalBudget || 0, values.reservedSavings || 0, allocations);
     const allocatedNode = form.querySelector('[data-budget-preview="allocated"]');
     const remainingNode = form.querySelector('[data-budget-preview="remaining"]');
+    const cycleSummary = logic.getCycleSummary(state, logic.getSelectedCycleKey(state));
+    const effectiveRemaining = result.remaining + Number(cycleSummary.totalGains || 0);
 
     if (allocatedNode) {
       allocatedNode.textContent = logic.formatMoney(result.totalAllocated, state.settings.currency);
     }
     if (remainingNode) {
-      remainingNode.textContent = logic.formatMoney(result.remaining, state.settings.currency);
-      remainingNode.classList.toggle("negative", result.remaining < 0);
+      remainingNode.textContent = logic.formatMoney(effectiveRemaining, state.settings.currency);
+      remainingNode.classList.toggle("negative", effectiveRemaining < 0);
     }
     if (result.errors.allocations) {
       setFeedback(form, "budget", result.errors.allocations, "error");
@@ -267,6 +287,7 @@
       state.ui.expenseFilters = {
         cycleKey: values.cycleKey || "current",
         categoryId: values.categoryId || "all",
+        type: values.type || "all",
         dateFrom: values.dateFrom || "",
         dateTo: values.dateTo || "",
         sort: values.sort || "newest",
@@ -355,6 +376,11 @@
       return;
     }
 
+    if (action === "open-gain-modal") {
+      openGainModal();
+      return;
+    }
+
     if (action === "close-modal") {
       if (actionTarget.classList.contains("modal-backdrop") && event.target.closest("[data-stop-close='true']")) {
         return;
@@ -431,22 +457,40 @@
 
     if (action === "delete-expense") {
       const expense = logic.getExpenseById(state, actionTarget.dataset.expenseId);
-      if (!expense || !global.confirm("Delete this expense?")) {
+      const transactionLabel = expense && logic.getExpenseType(expense) === "gain" ? "gain" : "expense";
+      if (!expense || !global.confirm("Delete this " + transactionLabel + "?")) {
         return;
       }
       commit(function deleteExpense() {
         state.expenses = state.expenses.filter(function keepExpense(item) {
           return item.id !== expense.id;
         });
-      }, { title: "Expense deleted", message: "The expense was removed." });
+      }, { title: "Transaction deleted", message: "The " + transactionLabel + " was removed." });
       return;
     }
 
     if (action === "contribute-goal") {
-      const goal = logic.getGoalById(state, actionTarget.dataset.goalId);
+      const goal = logic.getGoalProgress(state).find(function findGoal(item) {
+        return item.id === actionTarget.dataset.goalId;
+      });
       if (goal) {
-        openContributionModal(goal);
+        openContributionModal(goal, "contribution");
       }
+      return;
+    }
+
+    if (action === "withdraw-goal") {
+      const goal = logic.getGoalProgress(state).find(function findGoal(item) {
+        return item.id === actionTarget.dataset.goalId;
+      });
+      if (!goal) {
+        return;
+      }
+      if (!(Number(goal.contributed) > 0)) {
+        showToast("Withdrawal blocked", "This goal does not have any saved balance available yet.", "error");
+        return;
+      }
+      openContributionModal(goal, "withdrawal");
       return;
     }
 
@@ -681,7 +725,8 @@
           id: String(values.expenseId || "") || defaults.createId("exp"),
           amount: Number(values.amount || 0),
           date: String(values.date),
-          categoryId: String(values.categoryId),
+          categoryId: values.transactionType === "gain" ? "" : String(values.categoryId),
+          type: values.transactionType === "gain" ? "gain" : "expense",
           note: String(values.note || "").trim(),
           createdAt: defaults.nowIso(),
           updatedAt: defaults.nowIso(),
@@ -696,7 +741,13 @@
         } else {
           state.expenses.push(payload);
         }
-      }, { title: "Expense saved", message: "The expense was assigned to the correct cycle automatically.", tone: "success" });
+      }, {
+        title: values.transactionType === "gain" ? "Gain saved" : "Expense saved",
+        message: values.transactionType === "gain"
+          ? "The gain boosts this cycle only and leaves future salary unchanged."
+          : "The expense was assigned to the correct cycle automatically.",
+        tone: "success",
+      });
       closeModal();
       return;
     }
@@ -705,7 +756,14 @@
       event.preventDefault();
       clearAllFeedback(form);
       const values = formDataToObject(form);
-      const errors = validation.validateContribution(values, state.goals);
+      const goal = logic.getGoalProgress(state).find(function findGoal(item) {
+        return item.id === values.goalId;
+      });
+      const mode = values.movementType === "withdrawal" ? "withdrawal" : "contribution";
+      const errors = validation.validateContribution(values, state.goals, {
+        mode,
+        availableAmount: Number(goal && goal.contributed) || 0,
+      });
       if (Object.keys(errors).length) {
         setFeedback(form, "goal-contribution", Object.values(errors)[0], "error");
         return;
@@ -717,11 +775,18 @@
           goalId: String(values.goalId),
           amount: Number(values.amount || 0),
           date: String(values.date),
+          type: mode,
           note: String(values.note || "").trim(),
           createdAt: defaults.nowIso(),
           updatedAt: defaults.nowIso(),
         });
-      }, { title: "Contribution saved", message: "Savings progress was updated.", tone: "success" });
+      }, {
+        title: mode === "withdrawal" ? "Withdrawal saved" : "Contribution saved",
+        message: mode === "withdrawal"
+          ? "The amount was removed from this savings goal without affecting your current balance."
+          : "Savings progress was updated.",
+        tone: "success",
+      });
       closeModal();
     }
   }

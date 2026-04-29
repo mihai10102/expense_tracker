@@ -45,6 +45,15 @@
     );
   }
 
+  function renderTransactionLabel(type) {
+    return type === "gain" ? "Gain" : "Expense";
+  }
+
+  function renderSignedTransactionAmount(expense, currency) {
+    const prefix = logic.getExpenseType(expense) === "gain" ? "+" : "-";
+    return prefix + logic.formatMoney(expense.amount, currency);
+  }
+
   function renderCategoryAllocationRows(summary, currency) {
     return summary.categorySummaries
       .map(function mapCategory(category) {
@@ -115,8 +124,8 @@
     if (!model.expenses.length) {
       return (
         '<div class="empty-state compact">' +
-        "<strong>No expenses match these filters</strong>" +
-        "<span>Try a different cycle, search term, or category filter.</span>" +
+        "<strong>No transactions match these filters</strong>" +
+        "<span>Try a different cycle, type, search term, or category filter.</span>" +
         "</div>"
       );
     }
@@ -127,16 +136,22 @@
         .map(function mapExpense(expense) {
           const category = logic.getCategoryById(model.state, expense.categoryId);
           const cycleInfo = logic.getCycleDateContext(model.state, expense.date);
+          const transactionType = logic.getExpenseType(expense);
+          const categoryLabel = transactionType === "gain"
+            ? '<span class="transaction-tag neutral">No category</span>'
+            : '<span class="table-category">' +
+              '<span class="category-badge" style="--badge-color:' + escapeHtml((category && category.color) || "#8892a6") + '">' + escapeHtml((category && category.icon) || "•") + "</span>" +
+              escapeHtml((category && category.name) || "Deleted") +
+              "</span>";
           return (
             "<tr>" +
             "<td>" + escapeHtml(cycle.formatLongDate(expense.date)) + "</td>" +
-            "<td><span class=\"table-category\">" +
-            '<span class="category-badge" style="--badge-color:' + escapeHtml((category && category.color) || "#8892a6") + '">' + escapeHtml((category && category.icon) || "•") + "</span>" +
-            escapeHtml((category && category.name) || "Deleted") +
-            "</span></td>" +
+            "<td><div class=\"table-category-stack\">" +
+            categoryLabel +
+            '<span class="transaction-tag ' + escapeHtml(transactionType) + '">' + escapeHtml(renderTransactionLabel(transactionType)) + "</span></div></td>" +
             "<td>" + escapeHtml(expense.note || "No note") + "</td>" +
             '<td><span class="pill subtle">' + escapeHtml(cycleInfo.cycleLabel) + "</span></td>" +
-            '<td class="amount-cell">' + escapeHtml(logic.formatMoney(expense.amount, model.state.settings.currency)) + "</td>" +
+            '<td class="amount-cell ' + escapeHtml(transactionType === "gain" ? "positive" : "") + '">' + escapeHtml(renderSignedTransactionAmount(expense, model.state.settings.currency)) + "</td>" +
             "<td><div class=\"table-actions\">" +
             '<button type="button" class="ghost-button" data-action="edit-expense" data-expense-id="' + escapeHtml(expense.id) + '">Edit</button>' +
             '<button type="button" class="ghost-button" data-action="duplicate-expense" data-expense-id="' + escapeHtml(expense.id) + '">Duplicate</button>' +
@@ -171,6 +186,7 @@
           "<span>" + escapeHtml(goal.targetDate ? "Target " + cycle.formatLongDate(goal.targetDate) : "No target date") + "</span>" +
           '</div><div class="category-actions">' +
           '<button type="button" class="ghost-button" data-action="contribute-goal" data-goal-id="' + escapeHtml(goal.id) + '">Contribute</button>' +
+          '<button type="button" class="ghost-button" data-action="withdraw-goal" data-goal-id="' + escapeHtml(goal.id) + '">Withdraw</button>' +
           '<button type="button" class="ghost-button" data-action="edit-goal" data-goal-id="' + escapeHtml(goal.id) + '">Edit</button>' +
           '<button type="button" class="ghost-button danger" data-action="delete-goal" data-goal-id="' + escapeHtml(goal.id) + '">Delete</button>' +
           "</div></div>" +
@@ -192,7 +208,7 @@
           '<div class="history-row ' + (row.key === model.selectedCycleKey ? "active" : "") + '">' +
           '<button type="button" class="history-main" data-action="select-cycle" data-cycle-key="' + escapeHtml(row.key) + '">' +
           "<strong>" + escapeHtml(row.label) + "</strong>" +
-          "<span>" + escapeHtml(row.expenseCount) + " expenses</span>" +
+          "<span>" + escapeHtml(row.transactionCount) + " transactions</span>" +
           "</button>" +
           '<div class="history-money">' +
           "<span>" + escapeHtml(logic.formatMoney(row.totalSpent, model.state.settings.currency)) + "</span>" +
@@ -249,7 +265,7 @@
       '<div class="hero-copy">' +
       '<span class="pill">Active cycle ' + escapeHtml(model.summary.cycle.label) + "</span>" +
       "<h2>Stay on top of spending before the next payday reset.</h2>" +
-      "<p>Budget periods follow your salary cadence automatically, so every expense lands in the correct cycle without any manual sorting.</p>" +
+      "<p>Budget periods follow your salary cadence automatically, so expenses, gains, and savings activity all land in the correct cycle without manual sorting.</p>" +
       "</div>" +
       '<div class="hero-stats">' +
       "<div><span>Salary</span><strong>" + escapeHtml(logic.formatMoney(model.summary.salaryAmount, model.state.settings.currency)) + "</strong></div>" +
@@ -259,12 +275,13 @@
       "</section>" +
       '<section id="dashboard" class="stats-grid">' +
       renderMetricCard("Current salary", logic.formatMoney(model.summary.salaryAmount, model.state.settings.currency), "Configured in settings") +
-      renderMetricCard("Total budget", logic.formatMoney(model.summary.totalBudget, model.state.settings.currency), "For the selected cycle") +
+      renderMetricCard("Base budget", logic.formatMoney(model.summary.baseBudget, model.state.settings.currency), "Planned before any extra gains") +
+      renderMetricCard("Extra gains", logic.formatMoney(model.summary.totalGains, model.state.settings.currency), model.summary.gains.length + " gain entries", model.summary.totalGains > 0 ? "success" : "") +
       renderMetricCard("Spent", logic.formatMoney(model.summary.totalSpent, model.state.settings.currency), model.summary.expenses.length + " expense entries") +
-      renderMetricCard("Remaining", logic.formatMoney(model.summary.remainingBudget, model.state.settings.currency), "Budget minus expenses and reserved savings", model.summary.remainingBudget < 0 ? "danger" : "success") +
+      renderMetricCard("Remaining", logic.formatMoney(model.summary.remainingBudget, model.state.settings.currency), "Budget plus gains minus expenses and reserved savings", model.summary.remainingBudget < 0 ? "danger" : "success") +
       renderMetricCard("Allocated", logic.formatMoney(model.summary.totalAllocated, model.state.settings.currency), "Across all categories") +
-      renderMetricCard("Unallocated", logic.formatMoney(model.summary.unallocated, model.state.settings.currency), "Available for planning", model.summary.unallocated < 0 ? "danger" : "") +
-      renderMetricCard("Reserved for savings", logic.formatMoney(model.summary.reservedSavings, model.state.settings.currency), logic.formatMoney(model.summary.totalGoalContributions, model.state.settings.currency) + " manually contributed this cycle") +
+      renderMetricCard("Total budget", logic.formatMoney(model.summary.totalBudget, model.state.settings.currency), "Base budget plus gains in this cycle") +
+      renderMetricCard("Reserved for savings", logic.formatMoney(model.summary.reservedSavings, model.state.settings.currency), "+" + logic.formatMoney(model.summary.totalGoalContributions, model.state.settings.currency) + " added / -" + logic.formatMoney(model.summary.totalGoalWithdrawals, model.state.settings.currency) + " withdrawn this cycle") +
       renderMetricCard("Savings progress", logic.formatPercent(model.summary.savingsProgressPercent), logic.formatMoney(model.summary.totalSaved, model.state.settings.currency) + " of " + logic.formatMoney(model.summary.targetSaved, model.state.settings.currency), "success") +
       "</section>" +
       '<section class="panel-grid charts-grid">' +
@@ -281,7 +298,7 @@
       '<section id="budgeting" class="panel-grid two-column">' +
       '<article class="panel-card budget-card"><div class="panel-heading"><div><span class="eyebrow">Budget planner</span><h3>Allocate this cycle</h3></div><span class="pill subtle">' + escapeHtml(model.summary.cycle.label) + "</span></div>" +
       '<form id="budget-form" class="stack-form"><div class="form-grid">' +
-      '<label><span>Total budget</span><input type="number" min="0" step="0.01" name="totalBudget" value="' + escapeHtml(model.summary.totalBudget) + '" /></label>' +
+      '<label><span>Base budget</span><input type="number" min="0" step="0.01" name="totalBudget" value="' + escapeHtml(model.summary.baseBudget) + '" /></label>' +
       '<label><span>Reserved for savings</span><input type="number" min="0" step="0.01" name="reservedSavings" value="' + escapeHtml(model.summary.reservedSavings) + '" /></label>' +
       '</div><div class="budget-preview"><div><span>Allocated</span><strong data-budget-preview="allocated">' + escapeHtml(logic.formatMoney(model.summary.totalAllocated, model.state.settings.currency)) + '</strong></div><div><span>Still unallocated</span><strong data-budget-preview="remaining">' + escapeHtml(logic.formatMoney(model.summary.unallocated, model.state.settings.currency)) + "</strong></div></div>" +
       '<div class="allocation-list">' + renderCategoryAllocationRows(model.summary, model.state.settings.currency) + '</div><p class="form-feedback" data-feedback-for="budget"></p><button type="submit" class="primary-button full-width">Save budget plan</button></form></article>' +
@@ -298,10 +315,15 @@
   function renderExpensesPage(model) {
     return (
       '<section id="expenses" class="panel-card">' +
-      '<div class="panel-heading"><div><span class="eyebrow">Expense log</span><h3>Search, filter, and keep things tidy</h3></div><button type="button" class="primary-button" data-action="open-expense-modal">Add expense</button></div>' +
+      '<div class="panel-heading"><div><span class="eyebrow">Transaction log</span><h3>Track spending and extra income</h3></div><div class="inline-actions"><button type="button" class="secondary-button" data-action="open-gain-modal">Log gain</button><button type="button" class="primary-button" data-action="open-expense-modal">Add expense</button></div></div>' +
       '<form id="expense-filters-form" class="filter-toolbar">' +
       '<label><span>Cycle</span><select name="cycleKey">' + renderCycleOptions(model, model.state.ui.expenseFilters.cycleKey) + "</select></label>" +
       '<label><span>Category</span><select name="categoryId"><option value="all" ' + (model.state.ui.expenseFilters.categoryId === "all" ? "selected" : "") + '>All categories</option>' + renderCategoryOptions(model.state.categories, model.state.ui.expenseFilters.categoryId) + "</select></label>" +
+      '<label><span>Type</span><select name="type">' +
+      '<option value="all" ' + (model.state.ui.expenseFilters.type === "all" ? "selected" : "") + ">All types</option>" +
+      '<option value="expense" ' + (model.state.ui.expenseFilters.type === "expense" ? "selected" : "") + ">Expenses</option>" +
+      '<option value="gain" ' + (model.state.ui.expenseFilters.type === "gain" ? "selected" : "") + ">Gains</option>" +
+      "</select></label>" +
       '<label><span>From</span><input type="date" name="dateFrom" value="' + escapeHtml(model.state.ui.expenseFilters.dateFrom || "") + '" /></label>' +
       '<label><span>To</span><input type="date" name="dateTo" value="' + escapeHtml(model.state.ui.expenseFilters.dateTo || "") + '" /></label>' +
       '<label><span>Sort</span><select name="sort">' +
@@ -384,27 +406,42 @@
 
   function renderExpenseModal(modalState, state) {
     const expense = modalState.expense || {};
-    const title = expense.id ? "Edit expense" : modalState.duplicateSource ? "Duplicate expense" : "Add expense";
+    const transactionType = modalState.transactionType === "gain" ? "gain" : "expense";
+    const title = expense.id
+      ? "Edit " + renderTransactionLabel(transactionType).toLowerCase()
+      : modalState.duplicateSource
+        ? "Duplicate " + renderTransactionLabel(transactionType).toLowerCase()
+        : transactionType === "gain"
+          ? "Log gain"
+          : "Add expense";
+    const notePlaceholder = transactionType === "gain" ? "Refund, freelance, gift..." : "Groceries, taxi, rent...";
+    const categoryField = transactionType === "gain"
+      ? ""
+      : '<label><span>Category</span><select name="categoryId" required><option value="">Select a category</option>' + renderCategoryOptions(state.categories, expense.categoryId || "") + "</select></label>";
     return (
-      '<div class="modal-card"><div class="modal-header"><div><span class="eyebrow">Expense</span><h3>' + escapeHtml(title) + '</h3></div><button type="button" class="icon-button" data-action="close-modal">Close</button></div>' +
-      '<form id="expense-form" class="stack-form"><input type="hidden" name="expenseId" value="' + escapeHtml(expense.id || "") + '" /><div class="form-grid dual">' +
+      '<div class="modal-card"><div class="modal-header"><div><span class="eyebrow">Transaction</span><h3>' + escapeHtml(title) + '</h3></div><button type="button" class="icon-button" data-action="close-modal">Close</button></div>' +
+      '<form id="expense-form" class="stack-form"><input type="hidden" name="expenseId" value="' + escapeHtml(expense.id || "") + '" /><input type="hidden" name="transactionType" value="' + escapeHtml(transactionType) + '" /><div class="form-grid dual">' +
       '<label><span>Amount</span><input type="number" min="0" step="0.01" name="amount" value="' + escapeHtml(expense.amount || "") + '" required /></label>' +
       '<label><span>Date</span><input type="date" name="date" value="' + escapeHtml(expense.date || "") + '" required /></label>' +
-      '<label><span>Category</span><select name="categoryId" required><option value="">Select a category</option>' + renderCategoryOptions(state.categories, expense.categoryId || "") + "</select></label>" +
-      '<label><span>Note</span><input type="text" name="note" maxlength="80" value="' + escapeHtml(expense.note || "") + '" placeholder="Groceries, taxi, rent..." /></label>' +
-      '</div><p class="form-feedback" data-feedback-for="expense"></p><div class="inline-actions"><button type="submit" class="primary-button">Save expense</button><button type="button" class="ghost-button" data-action="close-modal">Cancel</button></div></form></div>'
+      categoryField +
+      '<label><span>Note</span><input type="text" name="note" maxlength="80" value="' + escapeHtml(expense.note || "") + '" placeholder="' + escapeHtml(notePlaceholder) + '" /></label>' +
+      '</div><p class="form-feedback" data-feedback-for="expense"></p><div class="inline-actions"><button type="submit" class="primary-button">' + escapeHtml(transactionType === "gain" ? "Save gain" : "Save expense") + '</button><button type="button" class="ghost-button" data-action="close-modal">Cancel</button></div></form></div>'
     );
   }
 
-  function renderContributionModal(modalState) {
+  function renderContributionModal(modalState, state) {
     const dateValue = modalState.date || new Date().toISOString().slice(0, 10);
+    const isWithdrawal = modalState.mode === "withdrawal";
+    const availableAmount = Number(modalState.availableAmount || 0);
     return (
-      '<div class="modal-card"><div class="modal-header"><div><span class="eyebrow">Savings</span><h3>Contribute to ' + escapeHtml((modalState.goal && modalState.goal.name) || "goal") + '</h3></div><button type="button" class="icon-button" data-action="close-modal">Close</button></div>' +
-      '<form id="goal-contribution-form" class="stack-form"><input type="hidden" name="goalId" value="' + escapeHtml((modalState.goal && modalState.goal.id) || "") + '" /><div class="form-grid dual">' +
+      '<div class="modal-card"><div class="modal-header"><div><span class="eyebrow">Savings</span><h3>' + escapeHtml(isWithdrawal ? "Withdraw from " : "Contribute to ") + escapeHtml((modalState.goal && modalState.goal.name) || "goal") + '</h3></div><button type="button" class="icon-button" data-action="close-modal">Close</button></div>' +
+      '<form id="goal-contribution-form" class="stack-form"><input type="hidden" name="goalId" value="' + escapeHtml((modalState.goal && modalState.goal.id) || "") + '" /><input type="hidden" name="movementType" value="' + escapeHtml(isWithdrawal ? "withdrawal" : "contribution") + '" />' +
+      (isWithdrawal ? '<div class="modal-helper">Available to withdraw: <strong>' + escapeHtml(logic.formatMoney(availableAmount, state.settings.currency)) + "</strong></div>" : "") +
+      '<div class="form-grid dual">' +
       '<label><span>Amount</span><input type="number" min="0" step="0.01" name="amount" value="" required /></label>' +
       '<label><span>Date</span><input type="date" name="date" value="' + escapeHtml(dateValue) + '" required /></label>' +
-      '<label class="full-span"><span>Note</span><input type="text" name="note" maxlength="80" placeholder="Transfer, extra save, bonus..." /></label>' +
-      '</div><p class="form-feedback" data-feedback-for="goal-contribution"></p><div class="inline-actions"><button type="submit" class="primary-button">Save contribution</button><button type="button" class="ghost-button" data-action="close-modal">Cancel</button></div></form></div>'
+      '<label class="full-span"><span>Note</span><input type="text" name="note" maxlength="80" placeholder="' + escapeHtml(isWithdrawal ? "Trip booking, emergency use..." : "Transfer, extra save, bonus...") + '" /></label>' +
+      '</div><p class="form-feedback" data-feedback-for="goal-contribution"></p><div class="inline-actions"><button type="submit" class="primary-button">' + escapeHtml(isWithdrawal ? "Save withdrawal" : "Save contribution") + '</button><button type="button" class="ghost-button" data-action="close-modal">Cancel</button></div></form></div>'
     );
   }
 
@@ -415,7 +452,7 @@
     }
 
     const body = modalState.type === "goal-contribution"
-      ? renderContributionModal(modalState)
+      ? renderContributionModal(modalState, state)
       : renderExpenseModal(modalState, state);
 
     modalRoot.innerHTML =

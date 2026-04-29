@@ -77,18 +77,20 @@
     return source
       .filter(isPlainObject)
       .map(function normalizeExpense(expense) {
+        const type = expense.type === "gain" ? "gain" : "expense";
         return {
           id: normalizeText(expense.id) || "exp_" + Math.random().toString(36).slice(2, 10),
           amount: Math.max(toFiniteNumber(expense.amount, 0), 0),
           date: normalizeText(expense.date),
-          categoryId: normalizeText(expense.categoryId),
+          categoryId: type === "gain" ? "" : normalizeText(expense.categoryId),
+          type,
           note: normalizeText(expense.note),
           createdAt: normalizeText(expense.createdAt, defaults.nowIso()),
           updatedAt: normalizeText(expense.updatedAt, defaults.nowIso()),
         };
       })
       .filter(function keepExpense(expense) {
-        return expense.amount > 0 && expense.date && validCategoryIds.has(expense.categoryId);
+        return expense.amount > 0 && expense.date && (expense.type === "gain" || validCategoryIds.has(expense.categoryId));
       });
   }
 
@@ -122,6 +124,7 @@
           goalId: normalizeText(contribution.goalId),
           amount: Math.max(toFiniteNumber(contribution.amount, 0), 0),
           date: normalizeText(contribution.date),
+          type: contribution.type === "withdrawal" ? "withdrawal" : "contribution",
           note: normalizeText(contribution.note),
           createdAt: normalizeText(contribution.createdAt, defaults.nowIso()),
           updatedAt: normalizeText(contribution.updatedAt, defaults.nowIso()),
@@ -140,6 +143,7 @@
       expenseFilters: {
         cycleKey: normalizeText(filters.cycleKey, "current"),
         categoryId: normalizeText(filters.categoryId, "all"),
+        type: normalizeText(filters.type, "all"),
         dateFrom: normalizeText(filters.dateFrom),
         dateTo: normalizeText(filters.dateTo),
         sort: normalizeText(filters.sort, "newest"),

@@ -485,6 +485,11 @@ label {
   gap: 12px;
 }
 
+.table-category-stack {
+  display: grid;
+  gap: 8px;
+}
+
 .category-badge {
   width: 42px;
   height: 42px;
@@ -565,7 +570,7 @@ label {
 
 .filter-toolbar {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 18px;
 }
@@ -599,6 +604,33 @@ label {
 
 .amount-cell {
   font-weight: 700;
+}
+
+.amount-cell.positive {
+  color: var(--success);
+}
+
+.transaction-tag {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 0.28rem 0.62rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-soft);
+}
+
+.transaction-tag.gain {
+  background: rgba(69, 212, 154, 0.14);
+  color: var(--success);
+}
+
+.transaction-tag.neutral {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-muted);
 }
 
 .history-row {
@@ -671,6 +703,14 @@ label {
 
 .form-feedback.success {
   color: var(--success);
+}
+
+.modal-helper {
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(69, 212, 154, 0.22);
+  background: rgba(69, 212, 154, 0.08);
+  color: var(--text-soft);
 }
 
 .chart-empty-note {
@@ -772,11 +812,11 @@ label {
   }
 
   .filter-toolbar {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .search-field {
-    grid-column: span 3;
+    grid-column: span 2;
   }
 
   .topbar {

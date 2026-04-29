@@ -54,13 +54,17 @@
 
   function validateExpense(values, categories) {
     const errors = {};
+    const transactionType = values.transactionType === "gain" ? "gain" : "expense";
     if (!(Number(values.amount) > 0)) {
       errors.amount = "Amount must be greater than zero.";
     }
     if (!values.date || Number.isNaN(new Date(values.date).getTime())) {
-      errors.date = "Choose a valid expense date.";
+      errors.date = "Choose a valid date.";
     }
-    if (!categories.some(function hasCategory(category) { return category.id === values.categoryId; })) {
+    if (
+      transactionType !== "gain" &&
+      !categories.some(function hasCategory(category) { return category.id === values.categoryId; })
+    ) {
       errors.categoryId = "Select a valid category.";
     }
     return errors;
@@ -83,16 +87,25 @@
     return errors;
   }
 
-  function validateContribution(values, goals) {
+  function validateContribution(values, goals, options) {
+    const settings = options || {};
     const errors = {};
     if (!goals.some(function hasGoal(goal) { return goal.id === values.goalId; })) {
       errors.goalId = "Choose a valid savings goal.";
     }
     if (!(Number(values.amount) > 0)) {
-      errors.amount = "Contribution must be greater than zero.";
+      errors.amount = settings.mode === "withdrawal"
+        ? "Withdrawal must be greater than zero."
+        : "Contribution must be greater than zero.";
     }
     if (!values.date || Number.isNaN(new Date(values.date).getTime())) {
-      errors.date = "Pick a valid contribution date.";
+      errors.date = "Pick a valid date.";
+    }
+    if (
+      settings.mode === "withdrawal" &&
+      Number(values.amount || 0) > Number(settings.availableAmount || 0)
+    ) {
+      errors.amount = "You cannot withdraw more than this goal currently holds.";
     }
     return errors;
   }

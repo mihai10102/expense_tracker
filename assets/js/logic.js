@@ -32,6 +32,14 @@
     return Math.round(Number(value || 0)) + "%";
   }
 
+  function getExpenseType(expense) {
+    return expense && expense.type === "gain" ? "gain" : "expense";
+  }
+
+  function getContributionType(contribution) {
+    return contribution && contribution.type === "withdrawal" ? "withdrawal" : "contribution";
+  }
+
   function getCurrentCycle(state) {
     return cycle.getCycleForDate(new Date(), state.settings.cycleStartDay);
   }
@@ -77,19 +85,33 @@
 
   function getGoalProgress(state) {
     return state.goals.map(function mapGoal(goal) {
-      const contributed = state.goalContributions
+      const entries = state.goalContributions
         .filter(function matchGoal(entry) {
           return entry.goalId === goal.id;
+        });
+      const totalContributed = entries
+        .filter(function keepContribution(entry) {
+          return getContributionType(entry) === "contribution";
         })
         .reduce(function sumGoal(sum, entry) {
           return sum + Number(entry.amount || 0);
         }, 0);
+      const totalWithdrawn = entries
+        .filter(function keepWithdrawal(entry) {
+          return getContributionType(entry) === "withdrawal";
+        })
+        .reduce(function sumGoal(sum, entry) {
+          return sum + Number(entry.amount || 0);
+        }, 0);
+      const contributed = totalContributed - totalWithdrawn;
 
-      const percent = goal.targetAmount ? Math.min((contributed / goal.targetAmount) * 100, 100) : 0;
+      const percent = goal.targetAmount ? Math.max(Math.min((contributed / goal.targetAmount) * 100, 100), 0) : 0;
 
       return {
         ...goal,
         contributed,
+        totalContributed,
+        totalWithdrawn,
         remaining: Math.max(goal.targetAmount - contributed, 0),
         percent,
       };
@@ -100,11 +122,23 @@
     const cycleDate = cycle.toDateAtNoon(cycleKey);
     const currentCycle = cycle.getCycleForDate(cycleDate, state.settings.cycleStartDay);
     const budget = getBudgetRecord(state, currentCycle.key);
-    const expenses = state.expenses.filter(function filterExpense(expense) {
+    const transactions = state.expenses.filter(function filterExpense(expense) {
       return cycle.getCycleForDate(expense.date, state.settings.cycleStartDay).key === currentCycle.key;
     });
-    const contributions = state.goalContributions.filter(function filterContribution(entry) {
+    const expenses = transactions.filter(function keepExpense(expense) {
+      return getExpenseType(expense) === "expense";
+    });
+    const gains = transactions.filter(function keepGain(expense) {
+      return getExpenseType(expense) === "gain";
+    });
+    const cycleSavingsEntries = state.goalContributions.filter(function filterContribution(entry) {
       return cycle.getCycleForDate(entry.date, state.settings.cycleStartDay).key === currentCycle.key;
+    });
+    const contributions = cycleSavingsEntries.filter(function keepContribution(entry) {
+      return getContributionType(entry) === "contribution";
+    });
+    const withdrawals = cycleSavingsEntries.filter(function keepWithdrawal(entry) {
+      return getContributionType(entry) === "withdrawal";
     });
     const spentByCategory = new Map();
 
@@ -135,26 +169,42 @@
     const totalSpent = expenses.reduce(function sumSpent(sum, expense) {
       return sum + Number(expense.amount || 0);
     }, 0);
-    const totalBudget = Number(budget.totalBudget || state.settings.salaryAmount || 0);
+    const totalGains = gains.reduce(function sumGains(sum, expense) {
+      return sum + Number(expense.amount || 0);
+    }, 0);
+    const baseBudget = Number(budget.totalBudget || state.settings.salaryAmount || 0);
+    const totalBudget = baseBudget + totalGains;
     const reservedSavings = Number(budget.reservedSavings || 0);
     const totalGoalContributions = contributions.reduce(function sumContributions(sum, entry) {
       return sum + Number(entry.amount || 0);
     }, 0);
+    const totalGoalWithdrawals = withdrawals.reduce(function sumWithdrawals(sum, entry) {
+      return sum + Number(entry.amount || 0);
+    }, 0);
+    const netSavingsMovement = totalGoalContributions - totalGoalWithdrawals;
     const remainingBudget = totalBudget - reservedSavings - totalSpent;
     const unallocated = totalBudget - reservedSavings - totalAllocated;
 
     return {
       cycle: currentCycle,
       budget,
+      transactions,
       expenses,
       contributions,
+      withdrawals,
+      gains,
       categorySummaries,
+      baseBudget,
       totalBudget,
+      totalGains,
       totalSpent,
       totalAllocated,
       reservedSavings,
       totalGoalContributions,
+      totalGoalWithdrawals,
+      netSavingsMovement,
       remainingBudget,
+      transactionCount: transactions.length + cycleSavingsEntries.length,
       unallocated,
       salaryAmount: Number(state.settings.salaryAmount || 0),
       savingsGoalProgress: getGoalProgress(state),
@@ -171,6 +221,9 @@
         return false;
       }
       if (filters.categoryId !== "all" && expense.categoryId !== filters.categoryId) {
+        return false;
+      }
+      if (filters.type !== "all" && getExpenseType(expense) !== filters.type) {
         return false;
       }
       if (filters.dateFrom && new Date(expense.date) < new Date(filters.dateFrom)) {
@@ -263,7 +316,7 @@
         totalSpent: summary.totalSpent,
         totalBudget: summary.totalBudget,
         remainingBudget: summary.remainingBudget,
-        expenseCount: summary.expenses.length,
+        transactionCount: summary.transactionCount,
       };
     });
   }
@@ -307,6 +360,7 @@
   global.ExpenseTrackerLogic = {
     formatMoney,
     formatPercent,
+    getContributionType,
     getAvailableCycles,
     getBudgetRecord,
     getCategoryById,
@@ -315,6 +369,7 @@
     getCycleDateContext,
     getCycleSummary,
     getCurrentCycle,
+    getExpenseType,
     getExpenseById,
     getExpensesView,
     getGoalById,

@@ -1,6 +1,6 @@
 (function attachDefaultsModule(global) {
   const cycle = global.ExpenseTrackerCycle;
-  const APP_VERSION = "1.0.0";
+  const APP_VERSION = "1.1.0";
   const STORAGE_KEY = "expense-tracker-pro:v1";
 
   const DEFAULT_SETTINGS = {
@@ -59,6 +59,7 @@
         expenseFilters: {
           cycleKey: "current",
           categoryId: "all",
+          type: "all",
           dateFrom: "",
           dateTo: "",
           sort: "newest",
@@ -95,24 +96,26 @@
     return record;
   }
 
-  function expenseFor(categoryId, amount, date, note) {
+  function expenseFor(categoryId, amount, date, note, type) {
     return {
       id: createId("exp"),
       amount,
       date: cycle.formatDateISO(date),
-      categoryId,
+      categoryId: type === "gain" ? "" : categoryId,
+      type: type === "gain" ? "gain" : "expense",
       note,
       createdAt: nowIso(),
       updatedAt: nowIso(),
     };
   }
 
-  function goalContribution(goalId, amount, date, note) {
+  function goalContribution(goalId, amount, date, note, type) {
     return {
       id: createId("contrib"),
       goalId,
       amount,
       date: cycle.formatDateISO(date),
+      type: type === "withdrawal" ? "withdrawal" : "contribution",
       note,
       createdAt: nowIso(),
       updatedAt: nowIso(),
@@ -188,6 +191,7 @@
       expenseFor(getCategoryId("Food"), 58.7, new Date(currentCycle.start.getTime() + 6 * 86400000), "Weekly groceries"),
       expenseFor(getCategoryId("Entertainment"), 34, new Date(currentCycle.start.getTime() + 9 * 86400000), "Movie tickets"),
       expenseFor(getCategoryId("Health"), 26, new Date(currentCycle.start.getTime() + 11 * 86400000), "Pharmacy essentials"),
+      expenseFor("", 500, new Date(currentCycle.start.getTime() + 13 * 86400000), "Freelance payment", "gain"),
       expenseFor(getCategoryId("Shopping"), 88, new Date(previousCycle.start.getTime() + 5 * 86400000), "Home organizer"),
       expenseFor(getCategoryId("Food"), 64.2, new Date(previousCycle.start.getTime() + 8 * 86400000), "Weekend groceries"),
       expenseFor(getCategoryId("Transport"), 31.5, new Date(previousCycle.start.getTime() + 10 * 86400000), "Taxi to airport"),
@@ -221,6 +225,7 @@
       goalContribution(rainyDayGoal.id, 280, new Date(currentCycle.start.getTime() + 2 * 86400000), "Cycle reserve top-up"),
       goalContribution(travelGoal.id, 120, new Date(previousCycle.start.getTime() + 11 * 86400000), "Travel jar"),
       goalContribution(travelGoal.id, 140, new Date(currentCycle.start.getTime() + 7 * 86400000), "Bonus cash"),
+      goalContribution(travelGoal.id, 60, new Date(currentCycle.start.getTime() + 15 * 86400000), "Weekend getaway booking", "withdrawal"),
     ];
 
     state.ui.selectedCycleKey = cycle.getCycleKeyFromDate(today, state.settings.cycleStartDay);
