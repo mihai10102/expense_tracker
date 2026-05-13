@@ -215,9 +215,13 @@
     const cycleStartDay = state.settings.cycleStartDay;
     const searchTerm = String(filters.search || "").trim().toLowerCase();
     const selectedCycleKey = filters.cycleKey === "current" ? getCurrentCycle(state).key : filters.cycleKey;
+    const hasDateRange = Boolean(filters.dateFrom || filters.dateTo);
+    const fromDate = filters.dateFrom ? cycle.toDateAtNoon(filters.dateFrom) : null;
+    const toDate = filters.dateTo ? cycle.toDateAtNoon(filters.dateTo) : null;
 
     let expenses = state.expenses.filter(function filterExpense(expense) {
-      if (selectedCycleKey !== "all" && cycle.getCycleForDate(expense.date, cycleStartDay).key !== selectedCycleKey) {
+      const expenseDate = cycle.toDateAtNoon(expense.date);
+      if (!hasDateRange && selectedCycleKey !== "all" && cycle.getCycleForDate(expense.date, cycleStartDay).key !== selectedCycleKey) {
         return false;
       }
       if (filters.categoryId !== "all" && expense.categoryId !== filters.categoryId) {
@@ -226,10 +230,10 @@
       if (filters.type !== "all" && getExpenseType(expense) !== filters.type) {
         return false;
       }
-      if (filters.dateFrom && new Date(expense.date) < new Date(filters.dateFrom)) {
+      if (fromDate && (!expenseDate || expenseDate.getTime() < fromDate.getTime())) {
         return false;
       }
-      if (filters.dateTo && new Date(expense.date) > new Date(filters.dateTo)) {
+      if (toDate && (!expenseDate || expenseDate.getTime() > toDate.getTime())) {
         return false;
       }
       if (searchTerm && !String(expense.note || "").toLowerCase().includes(searchTerm)) {

@@ -28,10 +28,12 @@
     return errors;
   }
 
-  function validateBudget(totalBudget, reservedSavings, allocations) {
+  function validateBudget(totalBudget, reservedSavings, allocations, extraFunds) {
     const errors = {};
     const safeTotalBudget = Number.isFinite(Number(totalBudget)) ? Number(totalBudget) : 0;
     const safeReserved = Number.isFinite(Number(reservedSavings)) ? Number(reservedSavings) : 0;
+    const safeExtraFunds = Math.max(Number.isFinite(Number(extraFunds)) ? Number(extraFunds) : 0, 0);
+    const availableBudget = safeTotalBudget + safeExtraFunds;
     const totalAllocated = Object.values(allocations).reduce(function sumAllocations(sum, value) {
       return sum + Number(value || 0);
     }, 0);
@@ -42,13 +44,16 @@
     if (!Number.isFinite(safeReserved) || safeReserved < 0) {
       errors.reservedSavings = "Reserved savings must be zero or higher.";
     }
-    if (totalAllocated + safeReserved > safeTotalBudget) {
-      errors.allocations = "Category allocations plus reserved savings cannot exceed the total budget.";
+    if (totalAllocated + safeReserved > availableBudget) {
+      errors.allocations = safeExtraFunds > 0
+        ? "Category allocations plus reserved savings cannot exceed the base budget plus gains in this cycle."
+        : "Category allocations plus reserved savings cannot exceed the total budget.";
     }
     return {
       errors,
       totalAllocated,
-      remaining: safeTotalBudget - safeReserved - totalAllocated,
+      remaining: availableBudget - safeReserved - totalAllocated,
+      availableBudget,
     };
   }
 

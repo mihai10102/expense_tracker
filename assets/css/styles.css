@@ -575,6 +575,18 @@ label {
   margin-bottom: 18px;
 }
 
+.filter-note,
+.section-note {
+  margin: 0 0 18px;
+  color: var(--text-muted);
+  font-size: 0.94rem;
+  line-height: 1.5;
+}
+
+.section-note strong {
+  color: var(--text-soft);
+}
+
 .search-field {
   grid-column: span 2;
 }

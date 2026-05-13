@@ -209,6 +209,22 @@
     return Object.fromEntries(new FormData(form).entries());
   }
 
+  function resetExpenseFilters() {
+    state.ui.expenseFilters = {
+      cycleKey: "current",
+      categoryId: "all",
+      type: "all",
+      dateFrom: "",
+      dateTo: "",
+      sort: "newest",
+      search: "",
+    };
+  }
+
+  function getSelectedCycleSummary() {
+    return logic.getCycleSummary(state, logic.getSelectedCycleKey(state));
+  }
+
   function updateBudgetPreview() {
     const form = document.getElementById("budget-form");
     if (!form) {
@@ -223,18 +239,22 @@
       }
     });
 
-    const result = validation.validateBudget(values.totalBudget || 0, values.reservedSavings || 0, allocations);
+    const cycleSummary = getSelectedCycleSummary();
+    const result = validation.validateBudget(
+      values.totalBudget || 0,
+      values.reservedSavings || 0,
+      allocations,
+      Number(cycleSummary.totalGains || 0),
+    );
     const allocatedNode = form.querySelector('[data-budget-preview="allocated"]');
     const remainingNode = form.querySelector('[data-budget-preview="remaining"]');
-    const cycleSummary = logic.getCycleSummary(state, logic.getSelectedCycleKey(state));
-    const effectiveRemaining = result.remaining + Number(cycleSummary.totalGains || 0);
 
     if (allocatedNode) {
       allocatedNode.textContent = logic.formatMoney(result.totalAllocated, state.settings.currency);
     }
     if (remainingNode) {
-      remainingNode.textContent = logic.formatMoney(effectiveRemaining, state.settings.currency);
-      remainingNode.classList.toggle("negative", effectiveRemaining < 0);
+      remainingNode.textContent = logic.formatMoney(result.remaining, state.settings.currency);
+      remainingNode.classList.toggle("negative", result.remaining < 0);
     }
     if (result.errors.allocations) {
       setFeedback(form, "budget", result.errors.allocations, "error");
@@ -320,11 +340,171 @@
     showToast("Export ready", "Your budget data was downloaded as JSON.", "success");
   }
 
-  function handleImportedFile(file) {
-    if (!file) {
-      return;
+  function getImportFileExtension(file) {
+    const name = String((file && file.name) || "").trim().toLowerCase();
+    const extensionIndex = name.lastIndexOf(".");
+    return extensionIndex === -1 ? "" : name.slice(extensionIndex + 1);
+  }
+
+  function isJsonImportFile(file) {
+    const mimeType = String((file && file.type) || "").toLowerCase();
+    return getImportFileExtension(file) === "json" || mimeType.includes("json");
+  }
+
+  function getImportCategoryId() {
+    const otherCategory = state.categories.find(function findCategory(category) {
+      return String(category.name || "").trim().toLowerCase() === "other";
+    });
+    return (otherCategory && otherCategory.id) || (state.categories[0] && state.categories[0].id) || "";
+  }
+
+  function normalizeImportedText(value) {
+    return String(value == null ? "" : value).replace(/\s+/g, " ").trim();
+  }
+
+  function normalizeImportedAmount(value) {
+    if (typeof value === "number") {
+      return Number.isFinite(value) ? value : 0;
     }
 
+    const rawValue = normalizeImportedText(value).replace(/[^\d,.\-]/g, "");
+    if (!rawValue) {
+      return 0;
+    }
+
+    let normalizedValue = rawValue;
+    const hasComma = rawValue.includes(",");
+    const hasDot = rawValue.includes(".");
+
+    if (hasComma && hasDot) {
+      normalizedValue = rawValue.lastIndexOf(",") > rawValue.lastIndexOf(".")
+        ? rawValue.replaceAll(".", "").replace(",", ".")
+        : rawValue.replaceAll(",", "");
+    } else if (hasComma) {
+      normalizedValue = rawValue.replaceAll(".", "").replace(",", ".");
+    }
+
+    const amount = Number(normalizedValue);
+    return Number.isFinite(amount) ? amount : 0;
+  }
+
+  function normalizeImportedDate(value) {
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      return cycle.formatDateISO(value);
+    }
+
+    if (typeof value === "number" && global.XLSX && global.XLSX.SSF) {
+      const parsedNumberDate = global.XLSX.SSF.parse_date_code(value);
+      if (parsedNumberDate) {
+        return cycle.formatDateISO(new Date(parsedNumberDate.y, parsedNumberDate.m - 1, parsedNumberDate.d));
+      }
+    }
+
+    const text = normalizeImportedText(value);
+    if (!text) {
+      return "";
+    }
+    if (/^\d{4}-\d{2}-\d{2}/.test(text)) {
+      return text.slice(0, 10);
+    }
+
+    const parsedDate = new Date(text.replace(" ", "T"));
+    return Number.isNaN(parsedDate.getTime()) ? "" : cycle.formatDateISO(parsedDate);
+  }
+
+  function normalizeImportRow(row) {
+    return Object.keys(row || {}).reduce(function buildNormalizedRow(result, key) {
+      result[normalizeImportedText(key).toLowerCase()] = row[key];
+      return result;
+    }, {});
+  }
+
+  function buildImportedExpenseMatchKey(expense) {
+    return [
+      logic.getExpenseType(expense),
+      normalizeImportedDate(expense.date),
+      Number(expense.amount || 0).toFixed(2),
+      normalizeImportedText(expense.note).toLowerCase(),
+      String(expense.categoryId || ""),
+    ].join("|");
+  }
+
+  function parseImportedSpreadsheetRows(rows) {
+    const categoryId = getImportCategoryId();
+    const existingExpenseKeys = new Set(state.expenses.map(buildImportedExpenseMatchKey));
+    const importedTransactions = [];
+    let skippedCount = 0;
+    let duplicateCount = 0;
+
+    rows.forEach(function eachRow(rawRow) {
+      const row = normalizeImportRow(rawRow);
+      const status = normalizeImportedText(row.state).toUpperCase();
+      const amount = normalizeImportedAmount(row.amount);
+      const date = normalizeImportedDate(row["started date"] || row["completed date"] || row.date);
+
+      if ((status && status !== "COMPLETED") || !amount || !date) {
+        skippedCount += 1;
+        return;
+      }
+
+      const transactionType = amount > 0 ? "gain" : "expense";
+      const description = normalizeImportedText(row.description);
+      const fallbackNote = [normalizeImportedText(row.type), normalizeImportedText(row.product)]
+        .filter(Boolean)
+        .join(" • ");
+      const payload = {
+        amount: Math.abs(amount),
+        date,
+        categoryId: transactionType === "gain" ? "" : categoryId,
+        type: transactionType,
+        note: description || fallbackNote || "Imported transaction",
+      };
+      const matchKey = buildImportedExpenseMatchKey(payload);
+
+      if (existingExpenseKeys.has(matchKey)) {
+        duplicateCount += 1;
+        return;
+      }
+
+      importedTransactions.push({
+        id: defaults.createId("exp"),
+        ...payload,
+        createdAt: defaults.nowIso(),
+        updatedAt: defaults.nowIso(),
+      });
+    });
+
+    return {
+      transactions: importedTransactions,
+      skippedCount,
+      duplicateCount,
+    };
+  }
+
+  function readSpreadsheetRows(file) {
+    if (!global.XLSX) {
+      throw new Error("Spreadsheet parser unavailable.");
+    }
+
+    const workbook = global.XLSX.read(file, {
+      type: "array",
+      cellDates: true,
+    });
+    const firstSheetName = workbook.SheetNames[0];
+    const firstSheet = firstSheetName ? workbook.Sheets[firstSheetName] : null;
+
+    if (!firstSheet) {
+      return [];
+    }
+
+    return global.XLSX.utils.sheet_to_json(firstSheet, {
+      defval: "",
+      raw: false,
+      blankrows: false,
+    });
+  }
+
+  function importJsonFile(file) {
     const reader = new FileReader();
     reader.onload = function onLoad() {
       try {
@@ -335,13 +515,15 @@
           return;
         }
 
-        if (!global.confirm("Importing will replace your current saved data. Continue?")) {
+        if (!global.confirm("Importing this JSON backup will replace your current saved data. Continue?")) {
           return;
         }
 
         state = result.state;
         modalState = null;
         formDrafts = { category: null, goal: null };
+        state.ui.selectedCycleKey = logic.getCurrentCycle(state).key;
+        resetExpenseFilters();
         storage.saveState(state);
         render();
         showToast("Import complete", "Your saved data was replaced successfully.", "success");
@@ -350,6 +532,56 @@
       }
     };
     reader.readAsText(file);
+  }
+
+  function importSpreadsheetFile(file) {
+    const reader = new FileReader();
+    reader.onload = function onLoad() {
+      try {
+        const rows = readSpreadsheetRows(reader.result);
+        const result = parseImportedSpreadsheetRows(rows);
+
+        if (!result.transactions.length) {
+          const message = result.duplicateCount
+            ? "That file did not contain any new transactions to add."
+            : "No completed transactions or gains were found in that file.";
+          showToast("Import blocked", message, "error");
+          return;
+        }
+
+        if (!global.confirm("Import " + result.transactions.length + " transactions and gains from this file? Existing data will be kept.")) {
+          return;
+        }
+
+        commit(function saveImportedTransactions() {
+          state.expenses = state.expenses.concat(result.transactions);
+          state.ui.selectedCycleKey = logic.getCurrentCycle(state).key;
+          resetExpenseFilters();
+        }, {
+          title: "Import complete",
+          message: result.duplicateCount || result.skippedCount
+            ? result.transactions.length + " added, " + result.duplicateCount + " duplicates skipped, " + result.skippedCount + " rows ignored. Filters were reset to the current cycle."
+            : result.transactions.length + " transactions and gains were added successfully. Filters were reset to the current cycle.",
+          tone: "success",
+        });
+      } catch (error) {
+        showToast("Import failed", "That file could not be parsed as a supported spreadsheet export.", "error");
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  function handleImportedFile(file) {
+    if (!file) {
+      return;
+    }
+
+    if (isJsonImportFile(file)) {
+      importJsonFile(file);
+      return;
+    }
+
+    importSpreadsheetFile(file);
   }
 
   function handleClick(event) {
@@ -606,7 +838,13 @@
         }
       });
 
-      const result = validation.validateBudget(values.totalBudget || 0, values.reservedSavings || 0, allocations);
+      const cycleSummary = getSelectedCycleSummary();
+      const result = validation.validateBudget(
+        values.totalBudget || 0,
+        values.reservedSavings || 0,
+        allocations,
+        Number(cycleSummary.totalGains || 0),
+      );
       if (Object.keys(result.errors).length) {
         setFeedback(form, "budget", Object.values(result.errors)[0], "error");
         return;

@@ -301,6 +301,7 @@
       '<label><span>Base budget</span><input type="number" min="0" step="0.01" name="totalBudget" value="' + escapeHtml(model.summary.baseBudget) + '" /></label>' +
       '<label><span>Reserved for savings</span><input type="number" min="0" step="0.01" name="reservedSavings" value="' + escapeHtml(model.summary.reservedSavings) + '" /></label>' +
       '</div><div class="budget-preview"><div><span>Allocated</span><strong data-budget-preview="allocated">' + escapeHtml(logic.formatMoney(model.summary.totalAllocated, model.state.settings.currency)) + '</strong></div><div><span>Still unallocated</span><strong data-budget-preview="remaining">' + escapeHtml(logic.formatMoney(model.summary.unallocated, model.state.settings.currency)) + "</strong></div></div>" +
+      '<p class="section-note">Extra gains logged in this cycle: <strong>' + escapeHtml(logic.formatMoney(model.summary.totalGains, model.state.settings.currency)) + "</strong>. Allocations can use both the base budget and those gains.</p>" +
       '<div class="allocation-list">' + renderCategoryAllocationRows(model.summary, model.state.settings.currency) + '</div><p class="form-feedback" data-feedback-for="budget"></p><button type="submit" class="primary-button full-width">Save budget plan</button></form></article>' +
       '<article class="panel-card"><div class="panel-heading"><div><span class="eyebrow">Categories</span><h3>Manage spending buckets</h3></div></div>' +
       '<form id="category-form" class="stack-form compact-form"><input type="hidden" name="categoryId" value="" /><div class="form-grid triple">' +
@@ -313,6 +314,7 @@
   }
 
   function renderExpensesPage(model) {
+    const hasDateRange = Boolean(model.state.ui.expenseFilters.dateFrom || model.state.ui.expenseFilters.dateTo);
     return (
       '<section id="expenses" class="panel-card">' +
       '<div class="panel-heading"><div><span class="eyebrow">Transaction log</span><h3>Track spending and extra income</h3></div><div class="inline-actions"><button type="button" class="secondary-button" data-action="open-gain-modal">Log gain</button><button type="button" class="primary-button" data-action="open-expense-modal">Add expense</button></div></div>' +
@@ -331,6 +333,7 @@
       '<option value="oldest" ' + (model.state.ui.expenseFilters.sort === "oldest" ? "selected" : "") + ">Oldest</option>" +
       '<option value="highest" ' + (model.state.ui.expenseFilters.sort === "highest" ? "selected" : "") + ">Highest amount</option>" +
       '</select></label><label class="search-field"><span>Search note</span><input type="search" name="search" value="' + escapeHtml(model.state.ui.expenseFilters.search || "") + '" placeholder="Groceries, taxi, bill..." /></label></form>' +
+      (hasDateRange ? '<p class="filter-note">Date range is currently applied across all cycles while From or To is set.</p>' : "") +
       renderExpenseRows(model) +
       "</section>"
     );
@@ -371,7 +374,8 @@
       '<option value="0" ' + (Number(model.state.settings.firstDayOfWeek) === 0 ? "selected" : "") + ">Sunday</option>" +
       '<option value="6" ' + (Number(model.state.settings.firstDayOfWeek) === 6 ? "selected" : "") + ">Saturday</option>" +
       '</select></label></div><div class="settings-helper"><span class="pill subtle" data-settings-preview>Current preview: ' + escapeHtml(model.currentPreviewCycle) + '</span></div><p class="form-feedback" data-feedback-for="settings"></p><button type="submit" class="primary-button full-width">Save settings</button></form>' +
-      '<div class="data-tools"><button type="button" class="secondary-button" data-action="export-data">Export JSON</button><label class="secondary-button file-button"><input type="file" id="import-file" accept="application/json" />Import JSON</label><button type="button" class="ghost-button" data-action="seed-demo">Load demo data</button><button type="button" class="ghost-button danger" data-action="reset-data">Reset all data</button></div>' +
+      '<p class="section-note">Import a full JSON backup, or append transactions and gains from spreadsheet exports such as Excel, CSV, and TSV files.</p>' +
+      '<div class="data-tools"><button type="button" class="secondary-button" data-action="export-data">Export JSON</button><label class="secondary-button file-button"><input type="file" id="import-file" accept=".json,.xlsx,.xls,.csv,.tsv,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv,text/tab-separated-values" />Import file</label><button type="button" class="ghost-button" data-action="seed-demo">Load demo data</button><button type="button" class="ghost-button danger" data-action="reset-data">Reset all data</button></div>' +
       "</article></section>"
     );
   }
