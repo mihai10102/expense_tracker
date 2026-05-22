@@ -16,14 +16,41 @@
   let toastState = null;
   let toastTimer = null;
   let filterTimer = null;
+  let lockedScrollY = 0;
   let formDrafts = {
     category: null,
     goal: null,
   };
 
+  function setPageScrollLock(locked) {
+    const root = document.documentElement;
+    const body = document.body;
+
+    if (locked) {
+      lockedScrollY = global.scrollY || global.pageYOffset || 0;
+      root.classList.add("modal-open");
+      body.classList.add("modal-open");
+      body.style.position = "fixed";
+      body.style.top = "-" + lockedScrollY + "px";
+      body.style.left = "0";
+      body.style.right = "0";
+      body.style.width = "100%";
+      return;
+    }
+
+    root.classList.remove("modal-open");
+    body.classList.remove("modal-open");
+    body.style.position = "";
+    body.style.top = "";
+    body.style.left = "";
+    body.style.right = "";
+    body.style.width = "";
+    global.scrollTo(0, lockedScrollY);
+  }
+
   function renderModalLayer() {
     ui.renderModal(modalRoot, modalState, state);
-    document.body.classList.toggle("modal-open", Boolean(modalState));
+    setPageScrollLock(Boolean(modalState));
   }
 
   function getCurrentPage() {
