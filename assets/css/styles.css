@@ -823,18 +823,25 @@ label {
 .import-review-card .stack-form {
   min-height: 0;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  gap: 16px;
 }
 
 .import-review-card .table-wrap {
   min-height: 0;
-  max-height: min(52vh, calc(100vh - 290px));
-  overflow: auto;
-  overscroll-behavior: contain;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .import-review-table {
   min-width: 940px;
+}
+
+.pagination-bar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
 }
 
 .toast {

@@ -6,6 +6,7 @@
   const logic = global.ExpenseTrackerLogic;
   const ui = global.ExpenseTrackerUI;
   const charts = global.ExpenseTrackerCharts;
+  const IMPORT_REVIEW_PAGE_SIZE = 8;
 
   const appRoot = document.getElementById("app");
   const modalRoot = document.getElementById("modal-root");
@@ -630,10 +631,33 @@
     modalState = {
       type: "import-review",
       fileName: String((file && file.name) || "Imported file"),
-      rows: result.rows,
+      rows: result.rows.map(function mapRow(row) {
+        return {
+          ...row,
+          selected: !row.isDuplicate,
+        };
+      }),
       duplicateCount: result.duplicateCount,
       skippedCount: result.skippedCount,
+      currentPage: 1,
+      pageSize: IMPORT_REVIEW_PAGE_SIZE,
     };
+    renderModalLayer();
+  }
+
+  function getImportReviewPageCount(reviewState) {
+    const pageSize = Number((reviewState && reviewState.pageSize) || IMPORT_REVIEW_PAGE_SIZE) || IMPORT_REVIEW_PAGE_SIZE;
+    const rowCount = Array.isArray(reviewState && reviewState.rows) ? reviewState.rows.length : 0;
+    return Math.max(1, Math.ceil(rowCount / pageSize));
+  }
+
+  function setImportReviewPage(nextPage) {
+    if (!modalState || modalState.type !== "import-review") {
+      return;
+    }
+
+    const pageCount = getImportReviewPageCount(modalState);
+    modalState.currentPage = Math.min(Math.max(Number(nextPage || 1), 1), pageCount);
     renderModalLayer();
   }
 
@@ -763,6 +787,16 @@
         return;
       }
       closeModal();
+      return;
+    }
+
+    if (action === "import-review-prev") {
+      setImportReviewPage((modalState && modalState.currentPage) - 1);
+      return;
+    }
+
+    if (action === "import-review-next") {
+      setImportReviewPage((modalState && modalState.currentPage) + 1);
       return;
     }
 
@@ -1140,14 +1174,8 @@
         return;
       }
 
-      const selectedIds = new Set(
-        Array.from(form.querySelectorAll('input[name="selectedImportIds"]:checked'))
-          .map(function mapInput(input) {
-            return input.value;
-          }),
-      );
       const selectedRows = modalState.rows.filter(function keepRow(row) {
-        return !row.isDuplicate && selectedIds.has(row.id);
+        return !row.isDuplicate && row.selected;
       });
 
       if (!selectedRows.length) {
@@ -1158,7 +1186,7 @@
       const duplicateCount = Number(modalState.duplicateCount || 0);
       const skippedCount = Number(modalState.skippedCount || 0);
       const unselectedCount = modalState.rows.filter(function countUnselected(row) {
-        return !row.isDuplicate && !selectedIds.has(row.id);
+        return !row.isDuplicate && !row.selected;
       }).length;
       const importedTransactions = selectedRows.map(function mapRow(row) {
         return row.payload;
@@ -1252,50 +1280,19 @@
       return;
     }
 
+    if (modalState && modalState.type === "import-review" && target.getAttribute("name") === "selectedImportIds") {
+      modalState.rows = modalState.rows.map(function mapRow(row) {
+        return row.id === target.value
+          ? { ...row, selected: target.checked }
+          : row;
+      });
+      renderModalLayer();
+      return;
+    }
+
     if (target.closest("#expense-filters-form")) {
       applyFilterChanges();
     }
-  }
-
-  function clampScrollPosition(value, max) {
-    return Math.min(Math.max(value, 0), Math.max(max, 0));
-  }
-
-  function handleModalWheel(event) {
-    if (!modalState || modalState.type !== "import-review") {
-      return;
-    }
-
-    const target = event.target;
-    if (!(target instanceof HTMLElement)) {
-      return;
-    }
-
-    const scrollContainer = target.closest(".import-review-card .table-wrap");
-    if (!(scrollContainer instanceof HTMLElement)) {
-      if (target.closest(".modal-shell")) {
-        event.preventDefault();
-      }
-      return;
-    }
-
-    const nextScrollTop = clampScrollPosition(
-      scrollContainer.scrollTop + event.deltaY,
-      scrollContainer.scrollHeight - scrollContainer.clientHeight,
-    );
-    const nextScrollLeft = clampScrollPosition(
-      scrollContainer.scrollLeft + event.deltaX,
-      scrollContainer.scrollWidth - scrollContainer.clientWidth,
-    );
-
-    if (nextScrollTop !== scrollContainer.scrollTop) {
-      scrollContainer.scrollTop = nextScrollTop;
-    }
-    if (nextScrollLeft !== scrollContainer.scrollLeft) {
-      scrollContainer.scrollLeft = nextScrollLeft;
-    }
-
-    event.preventDefault();
   }
 
   function attachEvents() {
@@ -1309,7 +1306,6 @@
         closeModal();
       }
     });
-    modalRoot.addEventListener("wheel", handleModalWheel, { passive: false });
     global.addEventListener("resize", function onResize() {
       if (appRoot.innerHTML) {
         render();

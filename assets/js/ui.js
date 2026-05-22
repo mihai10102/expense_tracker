@@ -478,8 +478,17 @@
     const selectableCount = modalState.rows.filter(function countSelectable(row) {
       return !row.isDuplicate;
     }).length;
+    const selectedCount = modalState.rows.filter(function countSelected(row) {
+      return !row.isDuplicate && row.selected;
+    }).length;
+    const pageSize = Number(modalState.pageSize || 8) || 8;
+    const pageCount = Math.max(1, Math.ceil(modalState.rows.length / pageSize));
+    const currentPage = Math.min(Math.max(Number(modalState.currentPage || 1), 1), pageCount);
+    const pageStart = (currentPage - 1) * pageSize;
+    const pageRows = modalState.rows.slice(pageStart, pageStart + pageSize);
     const summaryBits = [
       escapeHtml(String(modalState.rows.length)) + " parsed",
+      escapeHtml(String(selectedCount)) + " selected",
       escapeHtml(String(modalState.duplicateCount || 0)) + " duplicates",
       escapeHtml(String(modalState.skippedCount || 0)) + " ignored",
     ];
@@ -489,13 +498,13 @@
       '<form id="import-review-form" class="stack-form">' +
       '<div class="modal-helper import-review-summary"><strong>' + escapeHtml(modalState.fileName || "Imported file") + '</strong><span>' + summaryBits.join(" • ") + "</span></div>" +
       '<div class="table-wrap"><table class="expenses-table import-review-table"><thead><tr><th>Pick</th><th>Date</th><th>Note</th><th>Status</th><th>Amount</th><th>Import</th></tr></thead><tbody>' +
-      modalState.rows.map(function mapRow(row) {
+      pageRows.map(function mapRow(row) {
         const dateParts = getDateTimeParts(logic.getExpenseDateTime(row.payload));
         const dateLabel = cycle.formatLongDate(dateParts.date || row.payload.date);
         const meta = [row.sourceType, row.sourceProduct].filter(Boolean).join(" • ");
         return (
           "<tr>" +
-          '<td class="checkbox-cell"><input type="checkbox" name="selectedImportIds" value="' + escapeHtml(row.id) + '"' + (row.isDuplicate ? " disabled" : " checked") + " /></td>" +
+          '<td class="checkbox-cell"><input type="checkbox" name="selectedImportIds" value="' + escapeHtml(row.id) + '"' + (row.isDuplicate ? " disabled" : row.selected ? " checked" : "") + " /></td>" +
           "<td>" +
           '<div class="table-date-stack"><span>' + escapeHtml(dateLabel) + "</span>" +
           (dateParts.time ? '<span class="table-note-meta">' + escapeHtml(dateParts.time) + "</span>" : "") +
@@ -509,7 +518,9 @@
           "</tr>"
         );
       }).join("") +
-      '</tbody></table></div><p class="form-feedback" data-feedback-for="import-review"></p><div class="inline-actions"><button type="submit" class="primary-button"' + (selectableCount ? "" : " disabled") + '>Import selected</button><button type="button" class="ghost-button" data-action="close-modal">Cancel</button></div></form></div>'
+      '</tbody></table></div>' +
+      '<div class="pagination-bar"><span class="pill subtle">Page ' + escapeHtml(String(currentPage)) + " of " + escapeHtml(String(pageCount)) + '</span><div class="inline-actions"><button type="button" class="ghost-button" data-action="import-review-prev"' + (currentPage <= 1 ? " disabled" : "") + '>Previous</button><button type="button" class="ghost-button" data-action="import-review-next"' + (currentPage >= pageCount ? " disabled" : "") + '>Next</button></div></div>' +
+      '<p class="form-feedback" data-feedback-for="import-review"></p><div class="inline-actions"><button type="submit" class="primary-button"' + (selectableCount ? "" : " disabled") + '>Import selected</button><button type="button" class="ghost-button" data-action="close-modal">Cancel</button></div></form></div>'
     );
   }
 
