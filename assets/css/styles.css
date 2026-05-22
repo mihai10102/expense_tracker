@@ -64,6 +64,10 @@ body {
   color: var(--text-main);
 }
 
+body.modal-open {
+  overflow: hidden;
+}
+
 a {
   color: inherit;
 }
@@ -765,12 +769,15 @@ label {
   display: grid;
   place-items: center;
   padding: 18px;
+  overflow: auto;
+  overscroll-behavior: contain;
   background: rgba(5, 10, 20, 0.68);
   backdrop-filter: blur(14px);
 }
 
 .modal-shell {
   width: min(720px, 100%);
+  max-height: calc(100vh - 36px);
 }
 
 .modal-shell.wide {
@@ -802,6 +809,24 @@ label {
   flex-wrap: wrap;
   justify-content: space-between;
   gap: 10px 18px;
+}
+
+.import-review-card {
+  max-height: calc(100vh - 36px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.import-review-card .stack-form {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+}
+
+.import-review-card .table-wrap {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .import-review-table {

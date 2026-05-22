@@ -21,6 +21,11 @@
     goal: null,
   };
 
+  function renderModalLayer() {
+    ui.renderModal(modalRoot, modalState, state);
+    document.body.classList.toggle("modal-open", Boolean(modalState));
+  }
+
   function getCurrentPage() {
     const page = document.body.dataset.page || "dashboard";
     return page;
@@ -116,7 +121,7 @@
     }
     const model = buildModel();
     ui.renderApp(appRoot, model, currentPage);
-    ui.renderModal(modalRoot, modalState, state);
+    renderModalLayer();
     ui.renderToast(toastRoot, toastState);
     populateEditableForms();
     updateBudgetPreview();
@@ -128,7 +133,7 @@
 
   function closeModal() {
     modalState = null;
-    ui.renderModal(modalRoot, modalState, state);
+    renderModalLayer();
   }
 
   function openExpenseModal(expense) {
@@ -144,7 +149,7 @@
         note: "",
       },
     };
-    ui.renderModal(modalRoot, modalState, state);
+    renderModalLayer();
   }
 
   function openGainModal(expense) {
@@ -171,7 +176,7 @@
         note: expense.note,
       },
     };
-    ui.renderModal(modalRoot, modalState, state);
+    renderModalLayer();
   }
 
   function openContributionModal(goal, mode) {
@@ -182,7 +187,7 @@
       availableAmount: Number(goal && goal.contributed) || 0,
       date: new Date().toISOString().slice(0, 10),
     };
-    ui.renderModal(modalRoot, modalState, state);
+    renderModalLayer();
   }
 
   function setFeedback(form, key, message, tone) {
@@ -602,7 +607,7 @@
       duplicateCount: result.duplicateCount,
       skippedCount: result.skippedCount,
     };
-    ui.renderModal(modalRoot, modalState, state);
+    renderModalLayer();
   }
 
   function readSpreadsheetRows(file) {
