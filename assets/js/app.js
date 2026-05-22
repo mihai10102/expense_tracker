@@ -438,11 +438,10 @@
 
     rows.forEach(function eachRow(rawRow) {
       const row = normalizeImportRow(rawRow);
-      const status = normalizeImportedText(row.state).toUpperCase();
       const amount = normalizeImportedAmount(row.amount);
       const date = normalizeImportedDate(row["started date"] || row["completed date"] || row.date);
 
-      if ((status && status !== "COMPLETED") || !amount || !date) {
+      if (!amount || !date) {
         skippedCount += 1;
         return;
       }
@@ -544,7 +543,7 @@
         if (!result.transactions.length) {
           const message = result.duplicateCount
             ? "That file did not contain any new transactions to add."
-            : "No completed transactions or gains were found in that file.";
+            : "No valid transactions or gains were found in that file.";
           showToast("Import blocked", message, "error");
           return;
         }
