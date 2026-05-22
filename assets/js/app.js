@@ -1257,6 +1257,47 @@
     }
   }
 
+  function clampScrollPosition(value, max) {
+    return Math.min(Math.max(value, 0), Math.max(max, 0));
+  }
+
+  function handleModalWheel(event) {
+    if (!modalState || modalState.type !== "import-review") {
+      return;
+    }
+
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+
+    const scrollContainer = target.closest(".import-review-card .table-wrap");
+    if (!(scrollContainer instanceof HTMLElement)) {
+      if (target.closest(".modal-shell")) {
+        event.preventDefault();
+      }
+      return;
+    }
+
+    const nextScrollTop = clampScrollPosition(
+      scrollContainer.scrollTop + event.deltaY,
+      scrollContainer.scrollHeight - scrollContainer.clientHeight,
+    );
+    const nextScrollLeft = clampScrollPosition(
+      scrollContainer.scrollLeft + event.deltaX,
+      scrollContainer.scrollWidth - scrollContainer.clientWidth,
+    );
+
+    if (nextScrollTop !== scrollContainer.scrollTop) {
+      scrollContainer.scrollTop = nextScrollTop;
+    }
+    if (nextScrollLeft !== scrollContainer.scrollLeft) {
+      scrollContainer.scrollLeft = nextScrollLeft;
+    }
+
+    event.preventDefault();
+  }
+
   function attachEvents() {
     document.addEventListener("click", handleClick);
     document.addEventListener("submit", handleSubmit);
@@ -1268,6 +1309,7 @@
         closeModal();
       }
     });
+    modalRoot.addEventListener("wheel", handleModalWheel, { passive: false });
     global.addEventListener("resize", function onResize() {
       if (appRoot.innerHTML) {
         render();
