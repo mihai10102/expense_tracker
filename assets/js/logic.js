@@ -36,6 +36,20 @@
     return expense && expense.type === "gain" ? "gain" : "expense";
   }
 
+  function parseExpenseDateTimeValue(value) {
+    const text = String(value || "").trim();
+    if (!text) {
+      return 0;
+    }
+
+    const parsed = new Date(text.replace(" ", "T"));
+    return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+  }
+
+  function getExpenseDateTime(expense) {
+    return String((expense && expense.sourceDateTime) || (expense && expense.date) || "").trim();
+  }
+
   function getContributionType(contribution) {
     return contribution && contribution.type === "withdrawal" ? "withdrawal" : "contribution";
   }
@@ -244,12 +258,12 @@
 
     expenses = expenses.slice().sort(function sortExpense(left, right) {
       if (filters.sort === "oldest") {
-        return new Date(left.date) - new Date(right.date);
+        return parseExpenseDateTimeValue(getExpenseDateTime(left)) - parseExpenseDateTimeValue(getExpenseDateTime(right));
       }
       if (filters.sort === "highest") {
         return Number(right.amount) - Number(left.amount);
       }
-      return new Date(right.date) - new Date(left.date);
+      return parseExpenseDateTimeValue(getExpenseDateTime(right)) - parseExpenseDateTimeValue(getExpenseDateTime(left));
     });
 
     return expenses;
@@ -373,6 +387,7 @@
     getCycleDateContext,
     getCycleSummary,
     getCurrentCycle,
+    getExpenseDateTime,
     getExpenseType,
     getExpenseById,
     getExpensesView,

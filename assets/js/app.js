@@ -358,8 +358,74 @@
     return (otherCategory && otherCategory.id) || (state.categories[0] && state.categories[0].id) || "";
   }
 
+  const IMPORT_FIELD_ALIASES = {
+    amount: ["amount", "suma"],
+    date: ["date", "data"],
+    startedDate: ["started date", "start date", "data de inceput"],
+    completedDate: ["completed date", "completion date", "data finalizarii"],
+    description: ["description", "descriere", "details", "detalii"],
+    type: ["type", "tip"],
+    product: ["product", "produs"],
+    status: ["status", "stare"],
+  };
+
+  function maybeRepairImportedText(value) {
+    const text = String(value == null ? "" : value);
+    if (!/[ÃÄÅÂÈÊËÎÏ]/.test(text) || typeof global.TextDecoder !== "function") {
+      return text;
+    }
+
+    try {
+      const bytes = Uint8Array.from(text, function mapCharacter(character) {
+        return character.charCodeAt(0) & 0xff;
+      });
+      const decoded = new global.TextDecoder("utf-8").decode(bytes);
+      return decoded && !decoded.includes("\ufffd") ? decoded : text;
+    } catch (error) {
+      return text;
+    }
+  }
+
   function normalizeImportedText(value) {
-    return String(value == null ? "" : value).replace(/\s+/g, " ").trim();
+    return maybeRepairImportedText(value).replace(/\s+/g, " ").trim();
+  }
+
+  function normalizeImportedKey(value) {
+    return normalizeImportedText(value)
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+  }
+
+  function getImportedRowValue(row, fieldName) {
+    const aliases = IMPORT_FIELD_ALIASES[fieldName] || [];
+    const key = aliases.find(function findAlias(alias) {
+      return Object.prototype.hasOwnProperty.call(row, alias);
+    });
+    return key ? row[key] : "";
+  }
+
+  function formatImportedDatePart(date) {
+    return [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, "0"),
+      String(date.getDate()).padStart(2, "0"),
+    ].join("-");
+  }
+
+  function formatImportedDateTime(date, includeTime) {
+    const datePart = formatImportedDatePart(date);
+    if (!includeTime) {
+      return datePart;
+    }
+
+    return datePart + " " + [
+      String(date.getHours()).padStart(2, "0"),
+      String(date.getMinutes()).padStart(2, "0"),
+      String(date.getSeconds()).padStart(2, "0"),
+    ].join(":");
   }
 
   function normalizeImportedAmount(value) {
@@ -388,15 +454,26 @@
     return Number.isFinite(amount) ? amount : 0;
   }
 
-  function normalizeImportedDate(value) {
+  function normalizeImportedDateTime(value) {
     if (value instanceof Date && !Number.isNaN(value.getTime())) {
-      return cycle.formatDateISO(value);
+      const hasTime = value.getHours() || value.getMinutes() || value.getSeconds();
+      return formatImportedDateTime(value, Boolean(hasTime));
     }
 
     if (typeof value === "number" && global.XLSX && global.XLSX.SSF) {
       const parsedNumberDate = global.XLSX.SSF.parse_date_code(value);
       if (parsedNumberDate) {
-        return cycle.formatDateISO(new Date(parsedNumberDate.y, parsedNumberDate.m - 1, parsedNumberDate.d));
+        return formatImportedDateTime(
+          new Date(
+            parsedNumberDate.y,
+            parsedNumberDate.m - 1,
+            parsedNumberDate.d,
+            parsedNumberDate.H || 0,
+            parsedNumberDate.M || 0,
+            Math.floor(parsedNumberDate.S || 0),
+          ),
+          Boolean(parsedNumberDate.H || parsedNumberDate.M || parsedNumberDate.S),
+        );
       }
     }
 
@@ -404,42 +481,68 @@
     if (!text) {
       return "";
     }
-    if (/^\d{4}-\d{2}-\d{2}/.test(text)) {
-      return text.slice(0, 10);
+
+    const isoMatch = text.match(/^(\d{4}-\d{2}-\d{2})(?:[ T](\d{1,2}:\d{2}(?::\d{2})?))?/);
+    if (isoMatch) {
+      if (!isoMatch[2]) {
+        return isoMatch[1];
+      }
+      const timeParts = isoMatch[2].split(":");
+      return isoMatch[1] + " " + [
+        String(Number(timeParts[0] || 0)).padStart(2, "0"),
+        String(Number(timeParts[1] || 0)).padStart(2, "0"),
+        String(Number(timeParts[2] || 0)).padStart(2, "0"),
+      ].join(":");
     }
 
     const parsedDate = new Date(text.replace(" ", "T"));
-    return Number.isNaN(parsedDate.getTime()) ? "" : cycle.formatDateISO(parsedDate);
+    if (Number.isNaN(parsedDate.getTime())) {
+      return "";
+    }
+
+    return formatImportedDateTime(parsedDate, /\d{1,2}:\d{2}/.test(text));
+  }
+
+  function normalizeImportedDate(value) {
+    const dateTime = normalizeImportedDateTime(value);
+    return dateTime ? dateTime.slice(0, 10) : "";
   }
 
   function normalizeImportRow(row) {
     return Object.keys(row || {}).reduce(function buildNormalizedRow(result, key) {
-      result[normalizeImportedText(key).toLowerCase()] = row[key];
+      result[normalizeImportedKey(key)] = row[key];
       return result;
     }, {});
   }
 
+  function getSignedExpenseAmount(expense) {
+    const amount = Number(expense.amount || 0);
+    return logic.getExpenseType(expense) === "gain" ? amount : -amount;
+  }
+
   function buildImportedExpenseMatchKey(expense) {
     return [
-      logic.getExpenseType(expense),
-      normalizeImportedDate(expense.date),
-      Number(expense.amount || 0).toFixed(2),
-      normalizeImportedText(expense.note).toLowerCase(),
-      String(expense.categoryId || ""),
+      normalizeImportedDateTime(expense.sourceDateTime || expense.date),
+      getSignedExpenseAmount(expense).toFixed(2),
     ].join("|");
   }
 
   function parseImportedSpreadsheetRows(rows) {
     const categoryId = getImportCategoryId();
-    const existingExpenseKeys = new Set(state.expenses.map(buildImportedExpenseMatchKey));
-    const importedTransactions = [];
+    const knownExpenseKeys = new Set(state.expenses.map(buildImportedExpenseMatchKey));
+    const parsedTransactions = [];
     let skippedCount = 0;
     let duplicateCount = 0;
 
     rows.forEach(function eachRow(rawRow) {
       const row = normalizeImportRow(rawRow);
-      const amount = normalizeImportedAmount(row.amount);
-      const date = normalizeImportedDate(row["started date"] || row["completed date"] || row.date);
+      const amount = normalizeImportedAmount(getImportedRowValue(row, "amount"));
+      const sourceDateTime = normalizeImportedDateTime(
+        getImportedRowValue(row, "startedDate") ||
+        getImportedRowValue(row, "completedDate") ||
+        getImportedRowValue(row, "date"),
+      );
+      const date = normalizeImportedDate(sourceDateTime);
 
       if (!amount || !date) {
         skippedCount += 1;
@@ -447,37 +550,59 @@
       }
 
       const transactionType = amount > 0 ? "gain" : "expense";
-      const description = normalizeImportedText(row.description);
-      const fallbackNote = [normalizeImportedText(row.type), normalizeImportedText(row.product)]
+      const description = normalizeImportedText(getImportedRowValue(row, "description"));
+      const sourceType = normalizeImportedText(getImportedRowValue(row, "type"));
+      const sourceProduct = normalizeImportedText(getImportedRowValue(row, "product"));
+      const sourceStatus = normalizeImportedText(getImportedRowValue(row, "status"));
+      const fallbackNote = [sourceType, sourceProduct]
         .filter(Boolean)
         .join(" • ");
       const payload = {
+        id: defaults.createId("exp"),
         amount: Math.abs(amount),
         date,
+        sourceDateTime,
         categoryId: transactionType === "gain" ? "" : categoryId,
         type: transactionType,
         note: description || fallbackNote || "Imported transaction",
-      };
-      const matchKey = buildImportedExpenseMatchKey(payload);
-
-      if (existingExpenseKeys.has(matchKey)) {
-        duplicateCount += 1;
-        return;
-      }
-
-      importedTransactions.push({
-        id: defaults.createId("exp"),
-        ...payload,
         createdAt: defaults.nowIso(),
         updatedAt: defaults.nowIso(),
+      };
+      const matchKey = buildImportedExpenseMatchKey(payload);
+      const isDuplicate = knownExpenseKeys.has(matchKey);
+
+      if (isDuplicate) {
+        duplicateCount += 1;
+      } else {
+        knownExpenseKeys.add(matchKey);
+      }
+
+      parsedTransactions.push({
+        id: payload.id,
+        isDuplicate,
+        payload,
+        sourceStatus,
+        sourceType,
+        sourceProduct,
       });
     });
 
     return {
-      transactions: importedTransactions,
+      rows: parsedTransactions,
       skippedCount,
       duplicateCount,
     };
+  }
+
+  function openImportReviewModal(file, result) {
+    modalState = {
+      type: "import-review",
+      fileName: String((file && file.name) || "Imported file"),
+      rows: result.rows,
+      duplicateCount: result.duplicateCount,
+      skippedCount: result.skippedCount,
+    };
+    ui.renderModal(modalRoot, modalState, state);
   }
 
   function readSpreadsheetRows(file) {
@@ -540,29 +665,15 @@
         const rows = readSpreadsheetRows(reader.result);
         const result = parseImportedSpreadsheetRows(rows);
 
-        if (!result.transactions.length) {
+        if (!result.rows.length) {
           const message = result.duplicateCount
-            ? "That file did not contain any new transactions to add."
+            ? "That file only contained exact duplicates."
             : "No valid transactions or gains were found in that file.";
           showToast("Import blocked", message, "error");
           return;
         }
 
-        if (!global.confirm("Import " + result.transactions.length + " transactions and gains from this file? Existing data will be kept.")) {
-          return;
-        }
-
-        commit(function saveImportedTransactions() {
-          state.expenses = state.expenses.concat(result.transactions);
-          state.ui.selectedCycleKey = logic.getCurrentCycle(state).key;
-          resetExpenseFilters();
-        }, {
-          title: "Import complete",
-          message: result.duplicateCount || result.skippedCount
-            ? result.transactions.length + " added, " + result.duplicateCount + " duplicates skipped, " + result.skippedCount + " rows ignored. Filters were reset to the current cycle."
-            : result.transactions.length + " transactions and gains were added successfully. Filters were reset to the current cycle.",
-          tone: "success",
-        });
+        openImportReviewModal(file, result);
       } catch (error) {
         showToast("Import failed", "That file could not be parsed as a supported spreadsheet export.", "error");
       }
@@ -986,6 +1097,51 @@
         tone: "success",
       });
       closeModal();
+      return;
+    }
+
+    if (form.id === "import-review-form") {
+      event.preventDefault();
+      clearAllFeedback(form);
+
+      if (!modalState || modalState.type !== "import-review") {
+        return;
+      }
+
+      const selectedIds = new Set(
+        Array.from(form.querySelectorAll('input[name="selectedImportIds"]:checked'))
+          .map(function mapInput(input) {
+            return input.value;
+          }),
+      );
+      const selectedRows = modalState.rows.filter(function keepRow(row) {
+        return !row.isDuplicate && selectedIds.has(row.id);
+      });
+
+      if (!selectedRows.length) {
+        setFeedback(form, "import-review", "Select at least one new transaction to import.", "error");
+        return;
+      }
+
+      const duplicateCount = Number(modalState.duplicateCount || 0);
+      const skippedCount = Number(modalState.skippedCount || 0);
+      const unselectedCount = modalState.rows.filter(function countUnselected(row) {
+        return !row.isDuplicate && !selectedIds.has(row.id);
+      }).length;
+      const importedTransactions = selectedRows.map(function mapRow(row) {
+        return row.payload;
+      });
+      modalState = null;
+
+      commit(function saveImportedTransactions() {
+        state.expenses = state.expenses.concat(importedTransactions);
+        state.ui.selectedCycleKey = logic.getCurrentCycle(state).key;
+        resetExpenseFilters();
+      }, {
+        title: "Import complete",
+        message: selectedRows.length + " added, " + duplicateCount + " duplicates skipped, " + skippedCount + " rows ignored, " + unselectedCount + " left unchecked. Filters were reset to the current cycle.",
+        tone: "success",
+      });
       return;
     }
 

@@ -54,6 +54,31 @@
     return prefix + logic.formatMoney(expense.amount, currency);
   }
 
+  function getDateTimeParts(value) {
+    const text = String(value || "").trim();
+    const match = text.match(/^(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2}(?::\d{2})?))?/);
+    return {
+      date: match ? match[1] : text,
+      time: match && match[2] ? match[2] : "",
+    };
+  }
+
+  function renderTransactionDateCell(expense) {
+    const sourceDateTime = logic.getExpenseDateTime(expense);
+    const parts = getDateTimeParts(sourceDateTime);
+    const dateLabel = cycle.formatLongDate(parts.date || expense.date);
+    if (!parts.time) {
+      return dateLabel;
+    }
+
+    return (
+      '<div class="table-date-stack">' +
+      "<span>" + escapeHtml(dateLabel) + "</span>" +
+      '<span class="table-note-meta">' + escapeHtml(parts.time) + "</span>" +
+      "</div>"
+    );
+  }
+
   function renderCategoryAllocationRows(summary, currency) {
     return summary.categorySummaries
       .map(function mapCategory(category) {
@@ -145,7 +170,7 @@
               "</span>";
           return (
             "<tr>" +
-            "<td>" + escapeHtml(cycle.formatLongDate(expense.date)) + "</td>" +
+            "<td>" + renderTransactionDateCell(expense) + "</td>" +
             "<td><div class=\"table-category-stack\">" +
             categoryLabel +
             '<span class="transaction-tag ' + escapeHtml(transactionType) + '">' + escapeHtml(renderTransactionLabel(transactionType)) + "</span></div></td>" +
@@ -449,6 +474,45 @@
     );
   }
 
+  function renderImportReviewModal(modalState, state) {
+    const selectableCount = modalState.rows.filter(function countSelectable(row) {
+      return !row.isDuplicate;
+    }).length;
+    const summaryBits = [
+      escapeHtml(String(modalState.rows.length)) + " parsed",
+      escapeHtml(String(modalState.duplicateCount || 0)) + " duplicates",
+      escapeHtml(String(modalState.skippedCount || 0)) + " ignored",
+    ];
+
+    return (
+      '<div class="modal-card import-review-card"><div class="modal-header"><div><span class="eyebrow">Import review</span><h3>Review parsed transactions</h3></div><button type="button" class="icon-button" data-action="close-modal">Close</button></div>' +
+      '<form id="import-review-form" class="stack-form">' +
+      '<div class="modal-helper import-review-summary"><strong>' + escapeHtml(modalState.fileName || "Imported file") + '</strong><span>' + summaryBits.join(" • ") + "</span></div>" +
+      '<div class="table-wrap"><table class="expenses-table import-review-table"><thead><tr><th>Pick</th><th>Date</th><th>Note</th><th>Status</th><th>Amount</th><th>Import</th></tr></thead><tbody>' +
+      modalState.rows.map(function mapRow(row) {
+        const dateParts = getDateTimeParts(logic.getExpenseDateTime(row.payload));
+        const dateLabel = cycle.formatLongDate(dateParts.date || row.payload.date);
+        const meta = [row.sourceType, row.sourceProduct].filter(Boolean).join(" • ");
+        return (
+          "<tr>" +
+          '<td class="checkbox-cell"><input type="checkbox" name="selectedImportIds" value="' + escapeHtml(row.id) + '"' + (row.isDuplicate ? " disabled" : " checked") + " /></td>" +
+          "<td>" +
+          '<div class="table-date-stack"><span>' + escapeHtml(dateLabel) + "</span>" +
+          (dateParts.time ? '<span class="table-note-meta">' + escapeHtml(dateParts.time) + "</span>" : "") +
+          "</div></td>" +
+          "<td><div class=\"table-note-stack\"><strong>" + escapeHtml(row.payload.note || "Imported transaction") + "</strong>" +
+          (meta ? '<span class="table-note-meta">' + escapeHtml(meta) + "</span>" : "") +
+          "</div></td>" +
+          "<td>" + (row.sourceStatus ? '<span class="transaction-tag neutral">' + escapeHtml(row.sourceStatus) + "</span>" : '<span class="pill subtle">No status</span>') + "</td>" +
+          '<td class="amount-cell ' + escapeHtml(row.payload.type === "gain" ? "positive" : "") + '">' + escapeHtml(renderSignedTransactionAmount(row.payload, state.settings.currency)) + "</td>" +
+          "<td>" + (row.isDuplicate ? '<span class="transaction-tag neutral">Duplicate</span>' : '<span class="transaction-tag gain">Ready</span>') + "</td>" +
+          "</tr>"
+        );
+      }).join("") +
+      '</tbody></table></div><p class="form-feedback" data-feedback-for="import-review"></p><div class="inline-actions"><button type="submit" class="primary-button"' + (selectableCount ? "" : " disabled") + '>Import selected</button><button type="button" class="ghost-button" data-action="close-modal">Cancel</button></div></form></div>'
+    );
+  }
+
   function renderModal(modalRoot, modalState, state) {
     if (!modalState) {
       modalRoot.innerHTML = "";
@@ -457,11 +521,14 @@
 
     const body = modalState.type === "goal-contribution"
       ? renderContributionModal(modalState, state)
-      : renderExpenseModal(modalState, state);
+      : modalState.type === "import-review"
+        ? renderImportReviewModal(modalState, state)
+        : renderExpenseModal(modalState, state);
+    const shellClassName = modalState.type === "import-review" ? "modal-shell wide" : "modal-shell";
 
     modalRoot.innerHTML =
       '<div class="modal-backdrop" data-action="close-modal">' +
-      '<div class="modal-shell" role="dialog" aria-modal="true" aria-label="Form dialog" data-stop-close="true">' +
+      '<div class="' + shellClassName + '" role="dialog" aria-modal="true" aria-label="Form dialog" data-stop-close="true">' +
       body +
       "</div></div>";
   }

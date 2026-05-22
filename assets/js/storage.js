@@ -82,6 +82,7 @@
           id: normalizeText(expense.id) || "exp_" + Math.random().toString(36).slice(2, 10),
           amount: Math.max(toFiniteNumber(expense.amount, 0), 0),
           date: normalizeText(expense.date),
+          sourceDateTime: normalizeText(expense.sourceDateTime),
           categoryId: type === "gain" ? "" : normalizeText(expense.categoryId),
           type,
           note: normalizeText(expense.note),
